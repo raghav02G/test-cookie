@@ -64,7 +64,8 @@ def auth_callback(code: str):
         httponly=True,
         samesite="none",
         secure=True,
-        max_age=1200
+        max_age=1200,
+        path="/"
     )
     response.set_cookie(
         key="refresh_token",
@@ -72,7 +73,8 @@ def auth_callback(code: str):
         httponly=True,
         samesite="none",
         secure=True,
-        max_age=300
+        max_age=300,
+        path="/"
     )
 
     return response
@@ -139,3 +141,4 @@ def logout():
     response.delete_cookie("access_token", samesite="none", secure=True)
     response.delete_cookie("refresh_token", samesite="none", secure=True)
     return response
+
