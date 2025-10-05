@@ -42,8 +42,6 @@ def auth_start():
 
 @app.get("/auth/callback")
 def auth_callback(code: str):
-    print(f"Received fake auth code: {code}")
-
     access_token = f"access-{uuid.uuid4()}"
     refresh_token = f"refresh-{uuid.uuid4()}"
 
@@ -54,30 +52,15 @@ def auth_callback(code: str):
         "refresh_expires_at": datetime.utcnow() + timedelta(minutes=5)
     }
 
-    # Redirect user to frontend dashboard
-    response = RedirectResponse(url=f"{FRONTEND_URL}/dashboard.html")
-
-    # ✅ Cookies: must be Secure + SameSite=None for cross-site HTTPS
-    response.set_cookie(
-        key="access_token",
-        value=access_token,
-        httponly=True,
-        samesite="none",
-        secure=True,
-        max_age=1200,
-        path="/"
-    )
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        samesite="none",
-        secure=True,
-        max_age=300,
-        path="/"
-    )
-
+    response = RedirectResponse(url="/post_auth")
+    response.set_cookie("access_token", access_token, httponly=True, secure=True, samesite="none", max_age=1200, path="/")
+    response.set_cookie("refresh_token", refresh_token, httponly=True, secure=True, samesite="none", max_age=300, path="/")
     return response
+
+
+@app.get("/post_auth")
+def post_auth():
+    return RedirectResponse("https://test-cookie-fn.vercel.app/dashboard.html")
 
 # -------------------------------
 # Protected route (/me)
@@ -141,4 +124,5 @@ def logout():
     response.delete_cookie("access_token", samesite="none", secure=True)
     response.delete_cookie("refresh_token", samesite="none", secure=True)
     return response
+
 
