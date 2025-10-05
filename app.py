@@ -1,31 +1,29 @@
 import os
 import uuid
-from fastapi import FastAPI, Request, Response, HTTPException, Depends
+from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-load_dotenv()
 
+load_dotenv()
 app = FastAPI()
 
-# In-memory store for sessions
+# In-memory session store
 sessions = {}
 
-# Allow cross-origin from frontend
-allowed_origin = []
-if os.getenv("FRONTEND_URL"):
-    allowed_origin.append(os.getenv("FRONTEND_URL"))
-allowed_origin.append("http://localhost:3000")
+# -------------------------------
+# Allowed origins (frontend)
+# -------------------------------
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://test-cookie-fn.vercel.app")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origin,
+    allow_origins=[FRONTEND_URL],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 # -------------------------------
 # Simulated OAuth redirect
@@ -34,8 +32,9 @@ app.add_middleware(
 @app.get("/auth/start")
 def auth_start():
     print("Redirecting to fake OAuth provider...")
-    return RedirectResponse("http://localhost:8000/auth/callback?code=fake_oauth_code")
-
+    # Simulate provider returning a code
+    # Redirects back to /auth/callback on same backend
+    return RedirectResponse(url=f"{os.getenv('BACKEND_URL', 'https://test-cookie-a0bv.onrender.com')}/auth/callback?code=fake_oauth_code")
 
 # -------------------------------
 # Simulated OAuth callback
@@ -45,40 +44,38 @@ def auth_start():
 def auth_callback(code: str):
     print(f"Received fake auth code: {code}")
 
-    # Create fake tokens
     access_token = f"access-{uuid.uuid4()}"
     refresh_token = f"refresh-{uuid.uuid4()}"
 
-    # Store both in our in-memory DB
     sessions[access_token] = {
         "user": {"username": "raghav"},
-        "expires_at": datetime.utcnow() + timedelta(seconds=20),  # short life
+        "expires_at": datetime.utcnow() + timedelta(seconds=20),
         "refresh_token": refresh_token,
         "refresh_expires_at": datetime.utcnow() + timedelta(minutes=5)
     }
 
-    # Create redirect response and set cookies
-    response = RedirectResponse(url="http://localhost:3000/dashboard.html")
-    
-    # For localhost, use sameSite="lax" with secure=False
+    # Redirect user to frontend dashboard
+    response = RedirectResponse(url=f"{FRONTEND_URL}/dashboard.html")
+
+    # ✅ Cookies: must be Secure + SameSite=None for cross-site HTTPS
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
-        samesite="lax",  # Changed from "None"
-        secure=False,
-        max_age=1200  # 20 minutes in seconds
+        samesite="none",
+        secure=True,
+        max_age=1200
     )
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        samesite="lax",  # Changed from "None"
-        secure=False,
-        max_age=300  # 5 minutes in seconds
+        samesite="none",
+        secure=True,
+        max_age=300
     )
-    return response
 
+    return response
 
 # -------------------------------
 # Protected route (/me)
@@ -96,7 +93,6 @@ def get_user(request: Request):
 
     return {"user": session["user"], "access_expires_at": session["expires_at"].isoformat()}
 
-
 # -------------------------------
 # Refresh endpoint (/refresh)
 # -------------------------------
@@ -107,7 +103,6 @@ def refresh_tokens(request: Request):
     if not refresh_token:
         raise HTTPException(status_code=401, detail="No refresh token")
 
-    # Find session with this refresh token
     session = next((s for s in sessions.values() if s["refresh_token"] == refresh_token), None)
     if not session:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
@@ -115,7 +110,6 @@ def refresh_tokens(request: Request):
     if datetime.utcnow() > session["refresh_expires_at"]:
         raise HTTPException(status_code=401, detail="Refresh token expired")
 
-    # Create a new access token
     new_access = f"access-{uuid.uuid4()}"
     sessions[new_access] = {
         "user": session["user"],
@@ -124,18 +118,16 @@ def refresh_tokens(request: Request):
         "refresh_expires_at": session["refresh_expires_at"]
     }
 
-    # Create response and set new access cookie
     response = JSONResponse({"message": "Access token refreshed"})
     response.set_cookie(
         key="access_token",
         value=new_access,
         httponly=True,
-        samesite="lax",  # Changed from "None"
-        secure=False,
-        max_age=1200  # 20 minutes
+        samesite="none",
+        secure=True,
+        max_age=1200
     )
     return response
-
 
 # -------------------------------
 # Logout endpoint
@@ -144,6 +136,6 @@ def refresh_tokens(request: Request):
 @app.get("/logout")
 def logout():
     response = JSONResponse({"message": "Logged out"})
-    response.delete_cookie("access_token", samesite="lax")
-    response.delete_cookie("refresh_token", samesite="lax")
+    response.delete_cookie("access_token", samesite="none", secure=True)
+    response.delete_cookie("refresh_token", samesite="none", secure=True)
     return response
